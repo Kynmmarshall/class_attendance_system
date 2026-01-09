@@ -18,7 +18,7 @@ class GeofenceService {
 
     // 2. Get current position
     Position position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
     );
     debugPrint(
       '📍 [GeofenceService] Position lat=${position.latitude}, long=${position.longitude}',

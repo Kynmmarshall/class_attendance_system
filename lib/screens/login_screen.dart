@@ -1,7 +1,6 @@
 import 'package:class_attendance_system/screens/admin_screen.dart';
 import 'package:class_attendance_system/screens/students_screen.dart';
 import 'package:class_attendance_system/screens/teachers_screen.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 enum UserRole { student, teacher, admin }
@@ -101,6 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           decoration: const InputDecoration(
                             labelText: 'I am logging in as',
                           ),
+                          // ignore: deprecated_member_use
                           value: _role,
                           items: UserRole.values
                               .map(

@@ -49,8 +49,18 @@ class Course {
     }..removeWhere((key, value) => value == null);
   }
 
-  String buildQrPayload() {
+  String buildQrPayload({int? sessionId, String phase = 'start'}) {
     final courseId = id ?? 0;
-    return 'CourseID:$courseId,Lat:$latitude,Long:$longitude,Rad:$radius';
+    final segments = <String>['CourseID:$courseId'];
+    if (sessionId != null) {
+      segments
+        ..add('SessionID:$sessionId')
+        ..add('Phase:$phase');
+    }
+    segments
+      ..add('Lat:$latitude')
+      ..add('Long:$longitude')
+      ..add('Rad:$radius');
+    return segments.join(',');
   }
 }

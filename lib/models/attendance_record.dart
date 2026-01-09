@@ -1,38 +1,51 @@
 class AttendanceRecord {
   final int? id;
   final int courseId;
+  final int? sessionId;
   final String studentName;
   final DateTime checkInTime;
   final DateTime? checkOutTime;
   final bool isValid;
+  final DateTime? finalConfirmationTime;
+  final int minutesOutside;
   final String? courseName;
 
   const AttendanceRecord({
     this.id,
     required this.courseId,
+    this.sessionId,
     required this.studentName,
     required this.checkInTime,
     this.checkOutTime,
     required this.isValid,
+    this.finalConfirmationTime,
+    this.minutesOutside = 0,
     this.courseName,
   });
 
   AttendanceRecord copyWith({
     int? id,
     int? courseId,
+    int? sessionId,
     String? studentName,
     DateTime? checkInTime,
     DateTime? checkOutTime,
     bool? isValid,
+    DateTime? finalConfirmationTime,
+    int? minutesOutside,
     String? courseName,
   }) {
     return AttendanceRecord(
       id: id ?? this.id,
       courseId: courseId ?? this.courseId,
+      sessionId: sessionId ?? this.sessionId,
       studentName: studentName ?? this.studentName,
       checkInTime: checkInTime ?? this.checkInTime,
       checkOutTime: checkOutTime ?? this.checkOutTime,
       isValid: isValid ?? this.isValid,
+      finalConfirmationTime:
+          finalConfirmationTime ?? this.finalConfirmationTime,
+      minutesOutside: minutesOutside ?? this.minutesOutside,
       courseName: courseName ?? this.courseName,
     );
   }
@@ -41,6 +54,7 @@ class AttendanceRecord {
     return AttendanceRecord(
       id: map['id'] as int?,
       courseId: map['courseId'] as int,
+      sessionId: map['sessionId'] as int?,
       studentName: map['studentName'] as String,
       checkInTime: DateTime.parse(map['checkInTime'] as String),
       checkOutTime:
@@ -49,6 +63,12 @@ class AttendanceRecord {
           ? DateTime.parse(map['checkOutTime'] as String)
           : null,
       isValid: (map['isValid'] as int) == 1,
+      finalConfirmationTime:
+          map['finalConfirmationTime'] != null &&
+              (map['finalConfirmationTime'] as String).isNotEmpty
+          ? DateTime.parse(map['finalConfirmationTime'] as String)
+          : null,
+      minutesOutside: (map['minutesOutside'] as int?) ?? 0,
       courseName: map['courseName'] as String?,
     );
   }
@@ -57,10 +77,16 @@ class AttendanceRecord {
     return {
       'id': id,
       'courseId': courseId,
+      'sessionId': sessionId,
       'studentName': studentName,
       'checkInTime': checkInTime.toIso8601String(),
       'checkOutTime': checkOutTime?.toIso8601String(),
       'isValid': isValid ? 1 : 0,
+      'finalConfirmationTime': finalConfirmationTime?.toIso8601String(),
+      'minutesOutside': minutesOutside,
     }..removeWhere((key, value) => value == null);
   }
+
+  bool get awaitingFinalConfirmation =>
+      sessionId != null && finalConfirmationTime == null;
 }

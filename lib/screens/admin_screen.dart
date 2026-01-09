@@ -1,7 +1,6 @@
 import 'package:class_attendance_system/database/database_helper.dart';
 import 'package:class_attendance_system/models/attendance_record.dart';
 import 'package:class_attendance_system/models/course.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 class AdminScreen extends StatefulWidget {
@@ -38,7 +37,11 @@ class _AdminScreenState extends State<AdminScreen> {
     debugPrint(
       '🛡️ [AdminScreen] Fetching attendance for course=$_selectedCourseId',
     );
-    return _db.getAttendance(courseId: _selectedCourseId, includeInvalid: true);
+    return _db.getAttendance(
+      courseId: _selectedCourseId,
+      includeInvalid: true,
+      requireFinalConfirmation: true,
+    );
   }
 
   Future<void> _refreshAttendance() async {
@@ -76,7 +79,7 @@ class _AdminScreenState extends State<AdminScreen> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<int?>(
-                    value: _selectedCourseId,
+                    initialValue: _selectedCourseId,
                     decoration: const InputDecoration(
                       labelText: 'Filter by course',
                     ),
@@ -156,17 +159,21 @@ class _AdminScreenState extends State<AdminScreen> {
                     itemCount: records.length,
                     itemBuilder: (_, index) {
                       final record = records[index];
+                      final isFinalized = record.finalConfirmationTime != null;
                       return Card(
                         margin: const EdgeInsets.only(bottom: 12),
                         child: ListTile(
                           title: Text(record.studentName),
                           subtitle: Text(_buildSubtitle(record)),
-                          trailing: record.isValid
-                              ? TextButton(
-                                  onPressed: () => _forceCheckout(record.id!),
-                                  child: const Text('Check out'),
-                                )
-                              : const Chip(label: Text('Closed')),
+                          trailing: isFinalized
+                              ? const Chip(label: Text('Finalized'))
+                              : record.isValid
+                                  ? TextButton(
+                                      onPressed: () =>
+                                          _forceCheckout(record.id!),
+                                      child: const Text('Check out'),
+                                    )
+                                  : const Chip(label: Text('Closed')),
                         ),
                       );
                     },
@@ -186,8 +193,24 @@ class _AdminScreenState extends State<AdminScreen> {
         ? _formatTime(record.checkOutTime!)
         : '—';
     final courseLabel = record.courseName ?? 'Course ${record.courseId}';
-    final status = record.isValid ? 'Present' : 'Removed';
-    return '$courseLabel\nIn: $inTime | Out: $outTime\nStatus: $status';
+    final hasFinal = record.finalConfirmationTime != null;
+    final status = hasFinal
+        ? 'Complete'
+        : record.isValid
+            ? 'Active'
+            : 'Removed';
+    final buffer = StringBuffer(
+      '$courseLabel\nIn: $inTime | Out: $outTime\nStatus: $status',
+    );
+    if (record.finalConfirmationTime != null) {
+      buffer.write('\nFinal QR: ${_formatTime(record.finalConfirmationTime!)}');
+    } else if (record.awaitingFinalConfirmation) {
+      buffer.write('\nFinal QR: pending');
+    }
+    if (record.minutesOutside > 0) {
+      buffer.write('\nOutside: ${record.minutesOutside} min');
+    }
+    return buffer.toString();
   }
 
   String _formatTime(DateTime time) {
