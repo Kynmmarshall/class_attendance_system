@@ -1,5 +1,6 @@
 import 'package:class_attendance_system/models/attendance_record.dart';
 import 'package:class_attendance_system/models/course.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -11,6 +12,7 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
+    debugPrint('🗄️ [DatabaseHelper] Opening new database connection');
     _database = await _initDB('attendance_system.db');
     return _database!;
   }
@@ -18,18 +20,21 @@ class DatabaseHelper {
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
+    debugPrint('🗄️ [DatabaseHelper] Initializing DB at $path');
 
     return await openDatabase(
       path,
       version: 1,
       onCreate: _createDB,
       onConfigure: (db) async {
+        debugPrint('🗄️ [DatabaseHelper] Enabling foreign keys');
         await db.execute('PRAGMA foreign_keys = ON');
       },
     );
   }
 
   Future _createDB(Database db, int version) async {
+    debugPrint('🗄️ [DatabaseHelper] Creating schema v$version');
     // Stores Course details + Geofence Center (Lat/Lng)
     await db.execute('''
     CREATE TABLE courses (
@@ -58,18 +63,26 @@ class DatabaseHelper {
   // FR3: Unique QR generation per course (saving the course data)
   Future<int> createCourse(Course course) async {
     final db = await instance.database;
-    return await db.insert('courses', course.toMap());
+    final id = await db.insert('courses', course.toMap());
+    debugPrint(
+      '🗄️ [DatabaseHelper] Created course ${course.courseName} (id=$id)',
+    );
+    return id;
   }
 
   Future<List<Course>> getAllCourses() async {
     final db = await instance.database;
     final result = await db.query('courses', orderBy: 'courseName ASC');
+    debugPrint('🗄️ [DatabaseHelper] Loaded ${result.length} course(s)');
     return result.map((map) => Course.fromMap(map)).toList();
   }
 
   Future<Course?> getCourseById(int id) async {
     final db = await instance.database;
     final result = await db.query('courses', where: 'id = ?', whereArgs: [id]);
+    debugPrint(
+      '🗄️ [DatabaseHelper] getCourseById($id) -> ${result.isNotEmpty}',
+    );
     if (result.isEmpty) return null;
     return Course.fromMap(result.first);
   }
@@ -79,28 +92,54 @@ class DatabaseHelper {
     if (course.id == null) {
       throw ArgumentError('Cannot update course without an id');
     }
-    return db.update(
+    final count = await db.update(
       'courses',
       course.toMap(),
       where: 'id = ?',
       whereArgs: [course.id],
     );
+    debugPrint(
+      '🗄️ [DatabaseHelper] Updated course id=${course.id} (rows=$count)',
+    );
+    return count;
   }
 
   Future<int> deleteCourse(int id) async {
     final db = await instance.database;
-    return db.delete('courses', where: 'id = ?', whereArgs: [id]);
+    final count = await db.delete('courses', where: 'id = ?', whereArgs: [id]);
+    debugPrint('🗄️ [DatabaseHelper] Deleted course id=$id (rows=$count)');
+    return count;
   }
 
   // FR7: Record student info + timestamp
   Future<int> markAttendance(int courseId, String student, bool isValid) async {
     final db = await instance.database;
-    return await db.insert('attendance', {
+    final id = await db.insert('attendance', {
       'courseId': courseId,
       'studentName': student,
       'checkInTime': DateTime.now().toIso8601String(),
       'isValid': isValid ? 1 : 0,
     });
+    debugPrint(
+      '🗄️ [DatabaseHelper] markAttendance course=$courseId student=$student inRange=$isValid (id=$id)',
+    );
+    return id;
+  }
+
+  Future<bool> hasActiveAttendance(int courseId, String student) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'attendance',
+      columns: ['id'],
+      where: 'courseId = ? AND studentName = ? AND isValid = 1',
+      whereArgs: [courseId, student],
+      limit: 1,
+    );
+    final exists = result.isNotEmpty;
+    debugPrint(
+      '🗄️ [DatabaseHelper] hasActiveAttendance course=$courseId student=$student -> $exists',
+    );
+    return exists;
   }
 
   Future<List<AttendanceRecord>> getAttendance({
@@ -126,6 +165,10 @@ class DatabaseHelper {
       args.add(studentName);
     }
 
+    debugPrint(
+      '🗄️ [DatabaseHelper] Fetching attendance course=$courseId includeInvalid=$includeInvalid student=$studentName',
+    );
+
     final result = await db.rawQuery('''
       SELECT attendance.*, courses.courseName
       FROM attendance
@@ -139,28 +182,36 @@ class DatabaseHelper {
 
   Future<void> updateCheckoutTime(int attendanceId) async {
     final db = await instance.database;
-    await db.update(
+    final count = await db.update(
       'attendance',
       {'checkOutTime': DateTime.now().toIso8601String(), 'isValid': 0},
       where: 'id = ?',
       whereArgs: [attendanceId],
+    );
+    debugPrint(
+      '🗄️ [DatabaseHelper] Updated checkout for attendance=$attendanceId (rows=$count)',
     );
   }
 
   Future<int> purgeExpiredAttendance(Duration maxAway) async {
     final db = await instance.database;
     final cutoff = DateTime.now().subtract(maxAway).toIso8601String();
-    return db.update(
+    final count = await db.update(
       'attendance',
       {'isValid': 0, 'checkOutTime': DateTime.now().toIso8601String()},
       where: 'isValid = 1 AND checkInTime <= ?',
       whereArgs: [cutoff],
     );
+    debugPrint(
+      '🗄️ [DatabaseHelper] Purged $count attendance rows older than $cutoff',
+    );
+    return count;
   }
 
   Future<void> close() async {
     final db = _database;
     if (db != null) {
+      debugPrint('🗄️ [DatabaseHelper] Closing database');
       await db.close();
     }
   }

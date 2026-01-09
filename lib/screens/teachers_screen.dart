@@ -1,6 +1,8 @@
 import 'package:class_attendance_system/database/database_helper.dart';
 import 'package:class_attendance_system/models/course.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 class TeacherScreen extends StatefulWidget {
@@ -15,18 +17,22 @@ class TeacherScreen extends StatefulWidget {
 class _TeacherScreenState extends State<TeacherScreen> {
   final _formKey = GlobalKey<FormState>();
   final _courseController = TextEditingController();
-  final _latController = TextEditingController(text: '3.8480');
-  final _longController = TextEditingController(text: '11.5021');
+  final _latController = TextEditingController();
+  final _longController = TextEditingController();
   final _radiusController = TextEditingController(text: '50');
   late Future<List<Course>> _coursesFuture;
+  bool _isLocating = false;
 
   @override
   void initState() {
     super.initState();
+    debugPrint('🧑‍🏫 [TeacherScreen] init for ${widget.teacherName}');
     _coursesFuture = DatabaseHelper.instance.getAllCourses();
+    _captureLocation();
   }
 
   void _reload() {
+    debugPrint('🧑‍🏫 [TeacherScreen] Reloading courses');
     setState(() {
       _coursesFuture = DatabaseHelper.instance.getAllCourses();
     });
@@ -34,6 +40,25 @@ class _TeacherScreenState extends State<TeacherScreen> {
 
   Future<void> _saveCourse() async {
     if (!_formKey.currentState!.validate()) return;
+    debugPrint(
+      '🧑‍🏫 [TeacherScreen] Saving course ${_courseController.text.trim()}',
+    );
+
+    if (_latController.text.trim().isEmpty ||
+        _longController.text.trim().isEmpty) {
+      await _captureLocation();
+      if (_latController.text.trim().isEmpty ||
+          _longController.text.trim().isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location is required to create a course.'),
+            ),
+          );
+        }
+        return;
+      }
+    }
 
     final course = Course(
       courseName: _courseController.text.trim(),
@@ -53,6 +78,7 @@ class _TeacherScreenState extends State<TeacherScreen> {
   }
 
   void _showQr(Course course) {
+    debugPrint('🧑‍🏫 [TeacherScreen] Showing QR for course ${course.id}');
     showModalBottomSheet<void>(
       context: context,
       builder: (_) => Padding(
@@ -83,6 +109,7 @@ class _TeacherScreenState extends State<TeacherScreen> {
   }
 
   Future<void> _deleteCourse(Course course) async {
+    debugPrint('🧑‍🏫 [TeacherScreen] Deleting course ${course.id}');
     await DatabaseHelper.instance.deleteCourse(course.id!);
     if (!mounted) return;
     ScaffoldMessenger.of(
@@ -98,6 +125,41 @@ class _TeacherScreenState extends State<TeacherScreen> {
     _longController.dispose();
     _radiusController.dispose();
     super.dispose();
+  }
+
+  Future<void> _captureLocation() async {
+    setState(() => _isLocating = true);
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever ||
+          permission == LocationPermission.denied) {
+        throw 'Location permission denied';
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      _latController.text = position.latitude.toStringAsFixed(6);
+      _longController.text = position.longitude.toStringAsFixed(6);
+      debugPrint(
+        '🧑‍🏫 [TeacherScreen] Captured location lat=${position.latitude}, long=${position.longitude}',
+      );
+    } catch (error) {
+      debugPrint('🧑‍🏫 [TeacherScreen] Failed to capture location: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to fetch location: $error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLocating = false);
+      }
+    }
   }
 
   @override
@@ -133,9 +195,9 @@ class _TeacherScreenState extends State<TeacherScreen> {
                       Expanded(
                         child: TextFormField(
                           controller: _latController,
-                          keyboardType: TextInputType.number,
+                          readOnly: true,
                           decoration: const InputDecoration(
-                            labelText: 'Latitude',
+                            labelText: 'Latitude (auto)',
                           ),
                           validator: _validateDouble,
                         ),
@@ -144,12 +206,25 @@ class _TeacherScreenState extends State<TeacherScreen> {
                       Expanded(
                         child: TextFormField(
                           controller: _longController,
-                          keyboardType: TextInputType.number,
+                          readOnly: true,
                           decoration: const InputDecoration(
-                            labelText: 'Longitude',
+                            labelText: 'Longitude (auto)',
                           ),
                           validator: _validateDouble,
                         ),
+                      ),
+                      IconButton(
+                        icon: _isLocating
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.my_location),
+                        tooltip: 'Use current location',
+                        onPressed: _isLocating ? null : _captureLocation,
                       ),
                     ],
                   ),
@@ -188,6 +263,9 @@ class _TeacherScreenState extends State<TeacherScreen> {
                 }
 
                 if (snapshot.hasError) {
+                  debugPrint(
+                    '🧑‍🏫 [TeacherScreen] Error loading courses ${snapshot.error}',
+                  );
                   return Text('Unable to load courses: ${snapshot.error}');
                 }
 

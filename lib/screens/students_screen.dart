@@ -2,6 +2,7 @@ import 'package:class_attendance_system/database/database_helper.dart';
 import 'package:class_attendance_system/models/attendance_record.dart';
 import 'package:class_attendance_system/models/course.dart';
 import 'package:class_attendance_system/services/geofencing.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -20,10 +21,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
   @override
   void initState() {
     super.initState();
+    debugPrint('🎓 [StudentDashboard] init for ${widget.studentName}');
     _refreshHistory();
   }
 
   void _refreshHistory() {
+    debugPrint(
+      '🎓 [StudentDashboard] Refreshing history for ${widget.studentName}',
+    );
     setState(() {
       _historyFuture = DatabaseHelper.instance.getAttendance(
         studentName: widget.studentName,
@@ -33,6 +38,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Future<void> _openScanner() async {
+    debugPrint(
+      '🎓 [StudentDashboard] Opening scanner for ${widget.studentName}',
+    );
     final updated = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => StudentScanScreen(studentName: widget.studentName),
@@ -40,11 +48,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
 
     if (updated == true) {
+      debugPrint(
+        '🎓 [StudentDashboard] Scanner reported updates; purging expired attendance',
+      );
       await DatabaseHelper.instance.purgeExpiredAttendance(
         const Duration(minutes: 15),
       );
       _refreshHistory();
     }
+    debugPrint('🎓 [StudentDashboard] Scanner closed updated=$updated');
   }
 
   @override
@@ -75,6 +87,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
             }
 
             if (snapshot.hasError) {
+              debugPrint(
+                '🎓 [StudentDashboard] History error ${snapshot.error}',
+              );
               return ListView(
                 children: [
                   const SizedBox(height: 120),
@@ -184,14 +199,17 @@ class _StudentScanScreenState extends State<StudentScanScreen> {
 
   Future<void> _handleScan(String rawData) async {
     if (_isProcessing) return;
+    debugPrint('📷 [StudentScan] Handling QR payload: $rawData');
     setState(() => _isProcessing = true);
 
     try {
       final payload = _QrPayload.parse(rawData);
+      debugPrint('📷 [StudentScan] Parsed payload course=${payload.courseId}');
       final Course? course = await DatabaseHelper.instance.getCourseById(
         payload.courseId,
       );
       if (course == null) {
+        debugPrint('📷 [StudentScan] Course ${payload.courseId} not found');
         throw const FormatException('Course not recognized');
       }
 
@@ -200,18 +218,53 @@ class _StudentScanScreenState extends State<StudentScanScreen> {
         course.longitude,
         course.radius,
       );
+      debugPrint('📷 [StudentScan] Geofence validation result: $inRange');
+
+      if (!inRange) {
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (_) => const AlertDialog(
+            title: Text('Access Denied'),
+            content: Text(
+              'You are outside the classroom boundary. Attendance not recorded.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final alreadyChecked = await DatabaseHelper.instance.hasActiveAttendance(
+        payload.courseId,
+        widget.studentName,
+      );
+
+      if (alreadyChecked) {
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Already Checked In'),
+            content: Text(
+              'You already have active attendance for ${course.courseName}.',
+            ),
+          ),
+        );
+        return;
+      }
 
       await DatabaseHelper.instance.markAttendance(
         payload.courseId,
         widget.studentName,
-        inRange,
+        true,
+      );
+      debugPrint(
+        '📷 [StudentScan] Attendance logged for ${widget.studentName}',
       );
 
       if (!mounted) return;
-      final title = inRange ? 'Success' : 'Access Denied';
-      final message = inRange
-          ? 'Attendance marked for ${course.courseName}.'
-          : 'You appear to be outside the classroom boundary.';
+      final title = 'Success';
+      final message = 'Attendance marked for ${course.courseName}.';
 
       await showDialog<void>(
         context: context,
@@ -222,6 +275,7 @@ class _StudentScanScreenState extends State<StudentScanScreen> {
         Navigator.of(context).pop(true);
       }
     } catch (error) {
+      debugPrint('📷 [StudentScan] Error while scanning: $error');
       if (!mounted) return;
       await showDialog<void>(
         context: context,
@@ -249,6 +303,9 @@ class _StudentScanScreenState extends State<StudentScanScreen> {
               for (final barcode in capture.barcodes) {
                 final payload = barcode.rawValue;
                 if (payload != null) {
+                  debugPrint(
+                    '📷 [StudentScan] Barcode detected, forwarding to handler',
+                  );
                   _handleScan(payload);
                   break;
                 }
@@ -299,6 +356,7 @@ class _QrPayload {
     if (segments.length < 4) {
       throw const FormatException('Unexpected QR payload');
     }
+    debugPrint('📷 [StudentScan] Raw segments: $segments');
 
     int readCourseId() {
       final part = segments[0].split(':');
@@ -312,11 +370,13 @@ class _QrPayload {
       return double.parse(part[1]);
     }
 
-    return _QrPayload(
+    final payload = _QrPayload(
       courseId: readCourseId(),
       latitude: readDouble(1),
       longitude: readDouble(2),
       radius: readDouble(3),
     );
+    debugPrint('📷 [StudentScan] Payload parsed -> course=${payload.courseId}');
+    return payload;
   }
 }

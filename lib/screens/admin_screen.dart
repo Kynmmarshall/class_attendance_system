@@ -1,6 +1,7 @@
 import 'package:class_attendance_system/database/database_helper.dart';
 import 'package:class_attendance_system/models/attendance_record.dart';
 import 'package:class_attendance_system/models/course.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 class AdminScreen extends StatefulWidget {
@@ -21,6 +22,7 @@ class _AdminScreenState extends State<AdminScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint('🛡️ [AdminScreen] init for ${widget.adminName}');
     _attendanceFuture = _fetchAttendance();
     _loadCourses();
   }
@@ -28,14 +30,19 @@ class _AdminScreenState extends State<AdminScreen> {
   Future<void> _loadCourses() async {
     final data = await _db.getAllCourses();
     if (!mounted) return;
+    debugPrint('🛡️ [AdminScreen] Loaded ${data.length} course filters');
     setState(() => _courses = data);
   }
 
   Future<List<AttendanceRecord>> _fetchAttendance() {
+    debugPrint(
+      '🛡️ [AdminScreen] Fetching attendance for course=$_selectedCourseId',
+    );
     return _db.getAttendance(courseId: _selectedCourseId, includeInvalid: true);
   }
 
   Future<void> _refreshAttendance() async {
+    debugPrint('🛡️ [AdminScreen] Refresh requested');
     await _db.purgeExpiredAttendance(const Duration(minutes: 15));
     setState(() {
       _attendanceFuture = _fetchAttendance();
@@ -43,6 +50,7 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<void> _forceCheckout(int attendanceId) async {
+    debugPrint('🛡️ [AdminScreen] Force checkout id=$attendanceId');
     await _db.updateCheckoutTime(attendanceId);
     _refreshAttendance();
   }
@@ -86,6 +94,9 @@ class _AdminScreenState extends State<AdminScreen> {
                     ],
                     onChanged: (value) {
                       setState(() {
+                        debugPrint(
+                          '🛡️ [AdminScreen] Filter changed -> $value',
+                        );
                         _selectedCourseId = value;
                         _attendanceFuture = _fetchAttendance();
                       });
@@ -111,6 +122,9 @@ class _AdminScreenState extends State<AdminScreen> {
                   }
 
                   if (snapshot.hasError) {
+                    debugPrint(
+                      '🛡️ [AdminScreen] Error loading attendance ${snapshot.error}',
+                    );
                     return Center(
                       child: Text(
                         'Error loading attendance: ${snapshot.error}',

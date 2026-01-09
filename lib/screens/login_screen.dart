@@ -1,6 +1,7 @@
 import 'package:class_attendance_system/screens/admin_screen.dart';
 import 'package:class_attendance_system/screens/students_screen.dart';
 import 'package:class_attendance_system/screens/teachers_screen.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 enum UserRole { student, teacher, admin }
@@ -39,6 +40,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void _handleContinue() {
     if (!_formKey.currentState!.validate()) return;
     final name = _nameController.text.trim();
+    debugPrint('🔐 [LoginScreen] Continue tapped name=$name role=$_role');
     late Widget destination;
 
     switch (_role) {
@@ -53,6 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
         break;
     }
 
+    debugPrint('🔐 [LoginScreen] Navigating to ${destination.runtimeType}');
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => destination));
   }
 
@@ -109,6 +112,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               .toList(),
                           onChanged: (role) {
                             if (role != null) {
+                              debugPrint(
+                                '🔐 [LoginScreen] Role changed -> $role',
+                              );
                               setState(() => _role = role);
                             }
                           },
