@@ -1,3 +1,4 @@
+import 'package:class_attendance_system/screens/login_screen.dart';
 import 'package:flutter/material.dart';
 
 void main() {
@@ -9,12 +10,14 @@ class MainApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: Text('Hello World!'),
-        ),
+    return MaterialApp(
+      title: 'Smart Attendance',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
       ),
+      home: const LoginScreen(),
     );
   }
 }

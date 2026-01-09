@@ -1,5 +1,7 @@
-import 'package:sqflite/sqflite.dart';
+import 'package:class_attendance_system/models/attendance_record.dart';
+import 'package:class_attendance_system/models/course.dart';
 import 'package:path/path.dart';
+import 'package:sqflite/sqflite.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -17,7 +19,14 @@ class DatabaseHelper {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
 
-    return await openDatabase(path, version: 1, onCreate: _createDB);
+    return await openDatabase(
+      path,
+      version: 1,
+      onCreate: _createDB,
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
+    );
   }
 
   Future _createDB(Database db, int version) async {
@@ -40,20 +49,47 @@ class DatabaseHelper {
       studentName TEXT NOT NULL,
       checkInTime TEXT NOT NULL,
       checkOutTime TEXT,
-      isValid INTEGER NOT NULL
+      isValid INTEGER NOT NULL,
+      FOREIGN KEY(courseId) REFERENCES courses(id) ON DELETE CASCADE
     )
     ''');
   }
 
   // FR3: Unique QR generation per course (saving the course data)
-  Future<int> createCourse(String name, double lat, double long, double rad) async {
+  Future<int> createCourse(Course course) async {
     final db = await instance.database;
-    return await db.insert('courses', {
-      'courseName': name,
-      'latitude': lat,
-      'longitude': long,
-      'radius': rad
-    });
+    return await db.insert('courses', course.toMap());
+  }
+
+  Future<List<Course>> getAllCourses() async {
+    final db = await instance.database;
+    final result = await db.query('courses', orderBy: 'courseName ASC');
+    return result.map((map) => Course.fromMap(map)).toList();
+  }
+
+  Future<Course?> getCourseById(int id) async {
+    final db = await instance.database;
+    final result = await db.query('courses', where: 'id = ?', whereArgs: [id]);
+    if (result.isEmpty) return null;
+    return Course.fromMap(result.first);
+  }
+
+  Future<int> updateCourse(Course course) async {
+    final db = await instance.database;
+    if (course.id == null) {
+      throw ArgumentError('Cannot update course without an id');
+    }
+    return db.update(
+      'courses',
+      course.toMap(),
+      where: 'id = ?',
+      whereArgs: [course.id],
+    );
+  }
+
+  Future<int> deleteCourse(int id) async {
+    final db = await instance.database;
+    return db.delete('courses', where: 'id = ?', whereArgs: [id]);
   }
 
   // FR7: Record student info + timestamp
@@ -63,7 +99,69 @@ class DatabaseHelper {
       'courseId': courseId,
       'studentName': student,
       'checkInTime': DateTime.now().toIso8601String(),
-      'isValid': isValid ? 1 : 0 // 1 = Present, 0 = Denied (Outside Geofence)
+      'isValid': isValid ? 1 : 0,
     });
+  }
+
+  Future<List<AttendanceRecord>> getAttendance({
+    int? courseId,
+    bool includeInvalid = true,
+    String? studentName,
+  }) async {
+    final db = await instance.database;
+    final whereBuffer = StringBuffer('1 = 1');
+    final args = <Object?>[];
+
+    if (courseId != null) {
+      whereBuffer.write(' AND attendance.courseId = ?');
+      args.add(courseId);
+    }
+
+    if (!includeInvalid) {
+      whereBuffer.write(' AND attendance.isValid = 1');
+    }
+
+    if (studentName != null && studentName.isNotEmpty) {
+      whereBuffer.write(' AND attendance.studentName = ?');
+      args.add(studentName);
+    }
+
+    final result = await db.rawQuery('''
+      SELECT attendance.*, courses.courseName
+      FROM attendance
+      INNER JOIN courses ON attendance.courseId = courses.id
+      WHERE ${whereBuffer.toString()}
+      ORDER BY attendance.checkInTime DESC
+    ''', args);
+
+    return result.map((map) => AttendanceRecord.fromMap(map)).toList();
+  }
+
+  Future<void> updateCheckoutTime(int attendanceId) async {
+    final db = await instance.database;
+    await db.update(
+      'attendance',
+      {'checkOutTime': DateTime.now().toIso8601String(), 'isValid': 0},
+      where: 'id = ?',
+      whereArgs: [attendanceId],
+    );
+  }
+
+  Future<int> purgeExpiredAttendance(Duration maxAway) async {
+    final db = await instance.database;
+    final cutoff = DateTime.now().subtract(maxAway).toIso8601String();
+    return db.update(
+      'attendance',
+      {'isValid': 0, 'checkOutTime': DateTime.now().toIso8601String()},
+      where: 'isValid = 1 AND checkInTime <= ?',
+      whereArgs: [cutoff],
+    );
+  }
+
+  Future<void> close() async {
+    final db = _database;
+    if (db != null) {
+      await db.close();
+    }
   }
 }

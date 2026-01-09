@@ -1,69 +1,322 @@
-
 import 'package:class_attendance_system/database/database_helper.dart';
+import 'package:class_attendance_system/models/attendance_record.dart';
+import 'package:class_attendance_system/models/course.dart';
 import 'package:class_attendance_system/services/geofencing.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-class StudentScanScreen extends StatefulWidget {
+class StudentDashboard extends StatefulWidget {
+  final String studentName;
+
+  const StudentDashboard({super.key, required this.studentName});
+
   @override
-  _StudentScanScreenState createState() => _StudentScanScreenState();
+  State<StudentDashboard> createState() => _StudentDashboardState();
 }
 
-class _StudentScanScreenState extends State<StudentScanScreen> {
-  final GeofenceService _geoService = GeofenceService();
+class _StudentDashboardState extends State<StudentDashboard> {
+  late Future<List<AttendanceRecord>> _historyFuture;
 
-  void _handleScan(String rawData) async {
-    // 1. Parse QR Data (Simple parsing for prototype)
-    // Format: "CourseID:101,Lat:3.8480,Long:11.5021,Rad:50"
-    try {
-      final parts = rawData.split(',');
-      double targetLat = double.parse(parts[1].split(':')[1]);
-      double targetLong = double.parse(parts[2].split(':')[1]);
-      double radius = double.parse(parts[3].split(':')[1]);
-
-      // 2. Verify Geofence [cite: 28]
-      bool inRange = await _geoService.isStudentInRange(targetLat, targetLong, radius);
-
-      // 3. Log to Local SQL
-      await DatabaseHelper.instance.markAttendance(
-        101, 
-        "Student User", 
-        inRange
-      );
-
-      // 4. Show Result
-      if (inRange) {
-        _showDialog("Success", "Attendance Marked! You are in class.");
-      } else {
-        _showDialog("Access Denied", "You are outside the classroom boundary. ");
-      }
-    } catch (e) {
-      _showDialog("Error", "Invalid QR Code");
-    }
+  @override
+  void initState() {
+    super.initState();
+    _refreshHistory();
   }
 
-  void _showDialog(String title, String msg) {
-    showDialog(
-      context: context, 
-      builder: (_) => AlertDialog(title: Text(title), content: Text(msg))
+  void _refreshHistory() {
+    setState(() {
+      _historyFuture = DatabaseHelper.instance.getAttendance(
+        studentName: widget.studentName,
+        includeInvalid: true,
+      );
+    });
+  }
+
+  Future<void> _openScanner() async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => StudentScanScreen(studentName: widget.studentName),
+      ),
     );
+
+    if (updated == true) {
+      await DatabaseHelper.instance.purgeExpiredAttendance(
+        const Duration(minutes: 15),
+      );
+      _refreshHistory();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Scan QR")),
-      body: MobileScanner(
-        onDetect: (capture) {
-          final List<Barcode> barcodes = capture.barcodes;
-          for (final barcode in barcodes) {
-             if (barcode.rawValue != null) {
-               _handleScan(barcode.rawValue!);
-               break; // Stop after first scan
-             }
-          }
-        },
+      appBar: AppBar(
+        title: Text('Welcome, ${widget.studentName}'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner),
+            tooltip: 'Scan QR',
+            onPressed: _openScanner,
+          ),
+        ],
       ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await DatabaseHelper.instance.purgeExpiredAttendance(
+            const Duration(minutes: 15),
+          );
+          _refreshHistory();
+        },
+        child: FutureBuilder<List<AttendanceRecord>>(
+          future: _historyFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (snapshot.hasError) {
+              return ListView(
+                children: [
+                  const SizedBox(height: 120),
+                  Center(
+                    child: Text('Unable to load history: ${snapshot.error}'),
+                  ),
+                ],
+              );
+            }
+
+            final records = snapshot.data ?? [];
+            if (records.isEmpty) {
+              return ListView(
+                children: [
+                  const SizedBox(height: 120),
+                  Icon(
+                    Icons.history_rounded,
+                    size: 56,
+                    color: Colors.grey.shade500,
+                  ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Text(
+                      'No attendance logs yet. Tap the scanner icon to get started.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: records.length,
+              itemBuilder: (_, index) =>
+                  _AttendanceCard(record: records[index]),
+            );
+          },
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openScanner,
+        icon: const Icon(Icons.qr_code_2_outlined),
+        label: const Text('Scan Now'),
+      ),
+    );
+  }
+}
+
+class _AttendanceCard extends StatelessWidget {
+  final AttendanceRecord record;
+
+  const _AttendanceCard({required this.record});
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = record.isValid ? Colors.green : Colors.orange;
+    final statusText = record.isValid ? 'Active' : 'Closed';
+    final subtitle = StringBuffer(
+      'Checked in at ${_formatTime(record.checkInTime)}',
+    );
+    if (record.checkOutTime != null) {
+      subtitle.write(' • Checked out at ${_formatTime(record.checkOutTime!)}');
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        title: Text(record.courseName ?? 'Course ${record.courseId}'),
+        subtitle: Text(subtitle.toString()),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              record.isValid ? Icons.verified : Icons.info,
+              color: statusColor,
+            ),
+            Text(statusText, style: TextStyle(color: statusColor)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _formatTime(DateTime time) {
+    final local = time.toLocal();
+    final date =
+        '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+    final hh = local.hour.toString().padLeft(2, '0');
+    final mm = local.minute.toString().padLeft(2, '0');
+    return '$date $hh:$mm';
+  }
+}
+
+class StudentScanScreen extends StatefulWidget {
+  final String studentName;
+
+  const StudentScanScreen({super.key, required this.studentName});
+
+  @override
+  State<StudentScanScreen> createState() => _StudentScanScreenState();
+}
+
+class _StudentScanScreenState extends State<StudentScanScreen> {
+  final GeofenceService _geoService = GeofenceService();
+  bool _isProcessing = false;
+
+  Future<void> _handleScan(String rawData) async {
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
+
+    try {
+      final payload = _QrPayload.parse(rawData);
+      final Course? course = await DatabaseHelper.instance.getCourseById(
+        payload.courseId,
+      );
+      if (course == null) {
+        throw const FormatException('Course not recognized');
+      }
+
+      final inRange = await _geoService.isStudentInRange(
+        course.latitude,
+        course.longitude,
+        course.radius,
+      );
+
+      await DatabaseHelper.instance.markAttendance(
+        payload.courseId,
+        widget.studentName,
+        inRange,
+      );
+
+      if (!mounted) return;
+      final title = inRange ? 'Success' : 'Access Denied';
+      final message = inRange
+          ? 'Attendance marked for ${course.courseName}.'
+          : 'You appear to be outside the classroom boundary.';
+
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(title: Text(title), content: Text(message)),
+      );
+
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Error'),
+          content: Text('Invalid QR Code or permissions issue: $error'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Scan QR')),
+      body: Stack(
+        children: [
+          MobileScanner(
+            onDetect: (capture) {
+              if (_isProcessing) return;
+              for (final barcode in capture.barcodes) {
+                final payload = barcode.rawValue;
+                if (payload != null) {
+                  _handleScan(payload);
+                  break;
+                }
+              }
+            },
+          ),
+          if (_isProcessing)
+            const Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(strokeWidth: 2),
+                        SizedBox(width: 12),
+                        Text('Validating geofence...'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QrPayload {
+  final int courseId;
+  final double latitude;
+  final double longitude;
+  final double radius;
+
+  _QrPayload({
+    required this.courseId,
+    required this.latitude,
+    required this.longitude,
+    required this.radius,
+  });
+
+  factory _QrPayload.parse(String rawValue) {
+    final segments = rawValue.split(',');
+    if (segments.length < 4) {
+      throw const FormatException('Unexpected QR payload');
+    }
+
+    int readCourseId() {
+      final part = segments[0].split(':');
+      if (part.length != 2) throw const FormatException('Missing course id');
+      return int.parse(part[1]);
+    }
+
+    double readDouble(int index) {
+      final part = segments[index].split(':');
+      if (part.length != 2) throw const FormatException('Malformed value');
+      return double.parse(part[1]);
+    }
+
+    return _QrPayload(
+      courseId: readCourseId(),
+      latitude: readDouble(1),
+      longitude: readDouble(2),
+      radius: readDouble(3),
     );
   }
 }
