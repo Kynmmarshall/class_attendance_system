@@ -2,6 +2,8 @@ import 'package:class_attendance_system/database/database_helper.dart';
 import 'package:class_attendance_system/models/course.dart';
 import 'package:class_attendance_system/models/roster_entry.dart';
 import 'package:class_attendance_system/models/session.dart';
+import 'package:class_attendance_system/services/google_form_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -420,13 +422,27 @@ class _SessionControlState extends State<_SessionControl> {
     setState(() => _busy = true);
     try {
       await DatabaseHelper.instance.endSession(sessionId);
+      final sessionAfterEnd = await DatabaseHelper.instance.getSessionById(sessionId);
+      final sessionForExport = sessionAfterEnd ?? _session;
+      String? formUrl;
+      if (sessionForExport != null) {
+        formUrl = await _exportAttendanceSummary(sessionForExport);
+        if (formUrl != null) {
+          await DatabaseHelper.instance.updateSessionFormUrl(
+            sessionForExport.id!,
+            formUrl,
+          );
+        }
+      }
       final refreshed = await DatabaseHelper.instance.getSessionById(sessionId);
       if (!mounted) return;
       setState(() => _session = refreshed);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Session ended. Final QR unlocked for ${widget.course.courseName}.',
+            formUrl != null
+                ? 'Session ended and attendance form generated for ${widget.course.courseName}.'
+                : 'Session ended. Final QR unlocked for ${widget.course.courseName}.',
           ),
         ),
       );
@@ -444,6 +460,46 @@ class _SessionControlState extends State<_SessionControl> {
     }
   }
 
+  Future<String?> _exportAttendanceSummary(Session session) async {
+    final courseId = widget.course.id;
+    final currentSessionId = session.id;
+    if (courseId == null || currentSessionId == null) {
+      debugPrint('🧑‍🏫 [TeacherSession] Skipping export, missing IDs.');
+      return null;
+    }
+
+    try {
+      final statuses = await DatabaseHelper.instance.getStudentStatusesForSession(
+        courseId: courseId,
+        sessionId: currentSessionId,
+      );
+      if (statuses.isEmpty) {
+        debugPrint('🧑‍🏫 [TeacherSession] No roster data to export for course=$courseId.');
+        return null;
+      }
+      return await GoogleFormService.instance.createCourseAttendanceForm(
+        course: widget.course,
+        session: session,
+        statuses: statuses,
+      );
+    } catch (error) {
+      debugPrint('🧑‍🏫 [TeacherSession] Google Form export failed: $error');
+      return null;
+    }
+  }
+
+  Future<void> _openFormUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      debugPrint('🧑‍🏫 [TeacherSession] Invalid form url: $url');
+      return;
+    }
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched) {
+      debugPrint('🧑‍🏫 [TeacherSession] Unable to open $url');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final courseId = widget.course.id;
@@ -453,6 +509,7 @@ class _SessionControlState extends State<_SessionControl> {
 
     final isActive = _session?.isActive == true;
     final hasHistory = _session != null && _session!.id != null;
+    final hasFormLink = (_session?.formUrl ?? '').isNotEmpty;
     final startLabel = _session?.startTime != null
         ? _formatTime(_session!.startTime)
         : null;
@@ -577,6 +634,14 @@ class _SessionControlState extends State<_SessionControl> {
                   icon: const Icon(Icons.restart_alt),
                   label: const Text('Start new session'),
                 ),
+                if (hasFormLink) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _openFormUrl(_session!.formUrl!),
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('Open Attendance Form'),
+                  ),
+                ],
               ],
             ),
         ],

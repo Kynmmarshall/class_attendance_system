@@ -2,6 +2,7 @@ import 'package:class_attendance_system/models/attendance_record.dart';
 import 'package:class_attendance_system/models/course.dart';
 import 'package:class_attendance_system/models/roster_entry.dart';
 import 'package:class_attendance_system/models/session.dart';
+import 'package:class_attendance_system/models/student_attendance_status.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
@@ -11,7 +12,7 @@ class DatabaseHelper {
   static Database? _database;
 
   static const _dbName = 'attendance_system.db';
-  static const _dbVersion = 2;
+  static const _dbVersion = 3;
 
   DatabaseHelper._init();
 
@@ -32,11 +33,18 @@ class DatabaseHelper {
       version: _dbVersion,
       onCreate: _createDB,
       onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
+        var currentVersion = oldVersion;
+        if (currentVersion < 2) {
           debugPrint(
-            '🗄️ [DatabaseHelper] Upgrading schema v$oldVersion -> v$newVersion',
+            '🗄️ [DatabaseHelper] Recreating schema for upgrade $oldVersion -> $newVersion',
           );
           await _recreateSchema(db);
+          currentVersion = 2;
+        }
+        if (currentVersion < 3) {
+          debugPrint('🗄️ [DatabaseHelper] Adding formUrl column to sessions');
+          await db.execute('ALTER TABLE sessions ADD COLUMN formUrl TEXT');
+          currentVersion = 3;
         }
       },
       onConfigure: (db) async {
@@ -76,6 +84,7 @@ class DatabaseHelper {
         endTime TEXT,
         isActive INTEGER NOT NULL DEFAULT 1,
         finalQrToken TEXT,
+        formUrl TEXT,
         FOREIGN KEY(courseId) REFERENCES courses(id) ON DELETE CASCADE
       )
     ''');
@@ -472,14 +481,69 @@ class DatabaseHelper {
     );
 
     final result = await db.rawQuery('''
-      SELECT attendance.*, courses.courseName
+      SELECT attendance.*, courses.courseName, sessions.formUrl as formUrl
       FROM attendance
       INNER JOIN courses ON attendance.courseId = courses.id
+      LEFT JOIN sessions ON sessions.id = attendance.sessionId
       WHERE ${whereBuffer.toString()}
       ORDER BY attendance.checkInTime DESC
     ''', args);
 
     return result.map(AttendanceRecord.fromMap).toList();
+  }
+
+  Future<List<StudentAttendanceStatus>> getStudentStatusesForSession({
+    required int courseId,
+    required int sessionId,
+  }) async {
+    final db = await instance.database;
+    final rows = await db.rawQuery(
+      '''
+      SELECT roster.studentName AS studentName,
+             attendance.checkInTime AS checkInTime,
+             attendance.finalConfirmationTime AS finalConfirmationTime,
+             attendance.minutesOutside AS minutesOutside
+      FROM roster
+      LEFT JOIN attendance
+        ON attendance.courseId = roster.courseId
+       AND attendance.sessionId = ?
+       AND attendance.studentName = roster.studentName
+      WHERE roster.courseId = ?
+      ORDER BY roster.studentName ASC
+      '''.
+          trim(),
+      [sessionId, courseId],
+    );
+
+    DateTime? parseNullable(String? value) {
+      if (value == null || value.isEmpty) return null;
+      return DateTime.tryParse(value);
+    }
+
+    return rows
+        .map(
+          (row) => StudentAttendanceStatus(
+            studentName: row['studentName'] as String,
+            isPresent: (row['finalConfirmationTime'] as String?)?.isNotEmpty ==
+                true,
+            checkInTime: parseNullable(row['checkInTime'] as String?),
+            finalConfirmationTime:
+              parseNullable(row['finalConfirmationTime'] as String?),
+            minutesOutside: (row['minutesOutside'] as int?) ?? 0,
+          ),
+        )
+        .toList();
+  }
+
+  Future<void> updateSessionFormUrl(int sessionId, String formUrl) async {
+    final db = await instance.database;
+    await db.update(
+      'sessions',
+      {'formUrl': formUrl},
+      where: 'id = ?',
+      whereArgs: [sessionId],
+    );
+    debugPrint('🗄️ [DatabaseHelper] Stored form url for session=$sessionId');
   }
 
   Future<void> updateCheckoutTime(int attendanceId) async {

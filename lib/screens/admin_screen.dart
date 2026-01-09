@@ -2,6 +2,7 @@ import 'package:class_attendance_system/database/database_helper.dart';
 import 'package:class_attendance_system/models/attendance_record.dart';
 import 'package:class_attendance_system/models/course.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AdminScreen extends StatefulWidget {
   final String adminName;
@@ -160,20 +161,33 @@ class _AdminScreenState extends State<AdminScreen> {
                     itemBuilder: (_, index) {
                       final record = records[index];
                       final isFinalized = record.finalConfirmationTime != null;
+                      final hasFormLink = (record.formUrl ?? '').isNotEmpty;
                       return Card(
                         margin: const EdgeInsets.only(bottom: 12),
                         child: ListTile(
                           title: Text(record.studentName),
                           subtitle: Text(_buildSubtitle(record)),
-                          trailing: isFinalized
-                              ? const Chip(label: Text('Finalized'))
-                              : record.isValid
-                                  ? TextButton(
-                                      onPressed: () =>
-                                          _forceCheckout(record.id!),
-                                      child: const Text('Check out'),
-                                    )
-                                  : const Chip(label: Text('Closed')),
+                          trailing: Wrap(
+                            spacing: 8,
+                            children: [
+                              if (hasFormLink)
+                                IconButton(
+                                  tooltip: 'Open attendance form',
+                                  icon: const Icon(Icons.open_in_new),
+                                  onPressed: () =>
+                                      _openFormUrl(record.formUrl!),
+                                ),
+                              if (isFinalized)
+                                const Chip(label: Text('Finalized'))
+                              else if (record.isValid)
+                                TextButton(
+                                  onPressed: () => _forceCheckout(record.id!),
+                                  child: const Text('Check out'),
+                                )
+                              else
+                                const Chip(label: Text('Closed')),
+                            ],
+                          ),
                         ),
                       );
                     },
@@ -211,6 +225,18 @@ class _AdminScreenState extends State<AdminScreen> {
       buffer.write('\nOutside: ${record.minutesOutside} min');
     }
     return buffer.toString();
+  }
+
+  Future<void> _openFormUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      debugPrint('🛡️ [AdminScreen] Invalid form url: $url');
+      return;
+    }
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched) {
+      debugPrint('🛡️ [AdminScreen] Unable to open $url');
+    }
   }
 
   String _formatTime(DateTime time) {

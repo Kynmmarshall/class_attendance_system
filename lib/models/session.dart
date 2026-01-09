@@ -7,6 +7,7 @@ class Session {
   final bool isActive;
   final String? finalQrToken;
   final String? courseName;
+  final String? formUrl;
 
   const Session({
     this.id,
@@ -17,6 +18,7 @@ class Session {
     required this.isActive,
     this.finalQrToken,
     this.courseName,
+    this.formUrl,
   });
 
   factory Session.fromMap(Map<String, dynamic> map) {
@@ -31,6 +33,7 @@ class Session {
       isActive: (map['isActive'] as int) == 1,
       finalQrToken: map['finalQrToken'] as String?,
       courseName: map['courseName'] as String?,
+      formUrl: map['formUrl'] as String?,
     );
   }
 
@@ -43,6 +46,7 @@ class Session {
       'endTime': endTime?.toIso8601String(),
       'isActive': isActive ? 1 : 0,
       'finalQrToken': finalQrToken,
+      'formUrl': formUrl,
     }..removeWhere((key, value) => value == null);
   }
 
