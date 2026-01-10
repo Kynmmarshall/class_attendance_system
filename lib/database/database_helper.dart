@@ -12,7 +12,8 @@ class DatabaseHelper {
   static Database? _database;
 
   static const _dbName = 'attendance_system.db';
-  static const _dbVersion = 3;
+  static const _dbVersion = 4;
+  static const Duration _finalQrGrace = Duration(minutes: 5);
 
   DatabaseHelper._init();
 
@@ -45,6 +46,19 @@ class DatabaseHelper {
           debugPrint('🗄️ [DatabaseHelper] Adding formUrl column to sessions');
           await db.execute('ALTER TABLE sessions ADD COLUMN formUrl TEXT');
           currentVersion = 3;
+        }
+        if (currentVersion < 4) {
+          debugPrint('🗄️ [DatabaseHelper] Adding QR expiry and report columns');
+          await db.execute(
+            'ALTER TABLE sessions ADD COLUMN finalQrExpiresAt TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE sessions ADD COLUMN reportPdf BLOB',
+          );
+          await db.execute(
+            'ALTER TABLE sessions ADD COLUMN reportGeneratedAt TEXT',
+          );
+          currentVersion = 4;
         }
       },
       onConfigure: (db) async {
@@ -84,7 +98,9 @@ class DatabaseHelper {
         endTime TEXT,
         isActive INTEGER NOT NULL DEFAULT 1,
         finalQrToken TEXT,
-        formUrl TEXT,
+        finalQrExpiresAt TEXT,
+        reportPdf BLOB,
+        reportGeneratedAt TEXT,
         FOREIGN KEY(courseId) REFERENCES courses(id) ON DELETE CASCADE
       )
     ''');
@@ -349,9 +365,15 @@ class DatabaseHelper {
 
   Future<void> endSession(int sessionId) async {
     final db = await instance.database;
+    final now = DateTime.now();
+    final expiresAt = now.add(_finalQrGrace);
     final count = await db.update(
       'sessions',
-      {'isActive': 0, 'endTime': DateTime.now().toIso8601String()},
+      {
+        'isActive': 0,
+        'endTime': now.toIso8601String(),
+        'finalQrExpiresAt': expiresAt.toIso8601String(),
+      },
       where: 'id = ?',
       whereArgs: [sessionId],
     );
@@ -481,7 +503,8 @@ class DatabaseHelper {
     );
 
     final result = await db.rawQuery('''
-      SELECT attendance.*, courses.courseName, sessions.formUrl as formUrl
+      SELECT attendance.*, courses.courseName,
+             CASE WHEN sessions.reportPdf IS NOT NULL THEN 1 ELSE 0 END AS reportAvailable
       FROM attendance
       INNER JOIN courses ON attendance.courseId = courses.id
       LEFT JOIN sessions ON sessions.id = attendance.sessionId
@@ -535,15 +558,34 @@ class DatabaseHelper {
         .toList();
   }
 
-  Future<void> updateSessionFormUrl(int sessionId, String formUrl) async {
+  Future<void> saveSessionReport(int sessionId, Uint8List pdfBytes) async {
     final db = await instance.database;
     await db.update(
       'sessions',
-      {'formUrl': formUrl},
+      {
+        'reportPdf': pdfBytes,
+        'reportGeneratedAt': DateTime.now().toIso8601String(),
+      },
       where: 'id = ?',
       whereArgs: [sessionId],
     );
-    debugPrint('🗄️ [DatabaseHelper] Stored form url for session=$sessionId');
+    debugPrint('🗄️ [DatabaseHelper] Stored attendance report for session=$sessionId');
+  }
+
+  Future<Uint8List?> getSessionReport(int sessionId) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'sessions',
+      columns: ['reportPdf'],
+      where: 'id = ?',
+      whereArgs: [sessionId],
+      limit: 1,
+    );
+    if (result.isEmpty) return null;
+    final blob = result.first['reportPdf'];
+    if (blob is Uint8List) return blob;
+    if (blob is List<int>) return Uint8List.fromList(blob);
+    return null;
   }
 
   Future<void> updateCheckoutTime(int attendanceId) async {

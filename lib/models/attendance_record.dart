@@ -9,7 +9,7 @@ class AttendanceRecord {
   final DateTime? finalConfirmationTime;
   final int minutesOutside;
   final String? courseName;
-  final String? formUrl;
+  final bool reportAvailable;
 
   const AttendanceRecord({
     this.id,
@@ -22,7 +22,7 @@ class AttendanceRecord {
     this.finalConfirmationTime,
     this.minutesOutside = 0,
     this.courseName,
-    this.formUrl,
+    this.reportAvailable = false,
   });
 
   AttendanceRecord copyWith({
@@ -36,7 +36,7 @@ class AttendanceRecord {
     DateTime? finalConfirmationTime,
     int? minutesOutside,
     String? courseName,
-    String? formUrl,
+    bool? reportAvailable,
   }) {
     return AttendanceRecord(
       id: id ?? this.id,
@@ -50,7 +50,7 @@ class AttendanceRecord {
           finalConfirmationTime ?? this.finalConfirmationTime,
       minutesOutside: minutesOutside ?? this.minutesOutside,
       courseName: courseName ?? this.courseName,
-      formUrl: formUrl ?? this.formUrl,
+      reportAvailable: reportAvailable ?? this.reportAvailable,
     );
   }
 
@@ -74,7 +74,7 @@ class AttendanceRecord {
           : null,
       minutesOutside: (map['minutesOutside'] as int?) ?? 0,
       courseName: map['courseName'] as String?,
-      formUrl: map['formUrl'] as String?,
+      reportAvailable: ((map['reportAvailable'] as int?) ?? 0) == 1,
     );
   }
 
@@ -89,7 +89,7 @@ class AttendanceRecord {
       'isValid': isValid ? 1 : 0,
       'finalConfirmationTime': finalConfirmationTime?.toIso8601String(),
       'minutesOutside': minutesOutside,
-      'formUrl': formUrl,
+      'reportAvailable': reportAvailable ? 1 : 0,
     }..removeWhere((key, value) => value == null);
   }
 

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 class Session {
   final int? id;
   final int courseId;
@@ -7,7 +9,9 @@ class Session {
   final bool isActive;
   final String? finalQrToken;
   final String? courseName;
-  final String? formUrl;
+  final DateTime? finalQrExpiresAt;
+  final DateTime? reportGeneratedAt;
+  final Uint8List? reportPdf;
 
   const Session({
     this.id,
@@ -18,22 +22,31 @@ class Session {
     required this.isActive,
     this.finalQrToken,
     this.courseName,
-    this.formUrl,
+    this.finalQrExpiresAt,
+    this.reportGeneratedAt,
+    this.reportPdf,
   });
 
   factory Session.fromMap(Map<String, dynamic> map) {
+    DateTime? parseDate(dynamic value) {
+      if (value == null) return null;
+      final stringValue = value.toString();
+      if (stringValue.isEmpty) return null;
+      return DateTime.tryParse(stringValue);
+    }
+
     return Session(
       id: map['id'] as int?,
       courseId: map['courseId'] as int,
       durationMinutes: map['durationMinutes'] as int,
       startTime: DateTime.parse(map['startTime'] as String),
-      endTime: map['endTime'] != null && (map['endTime'] as String).isNotEmpty
-          ? DateTime.parse(map['endTime'] as String)
-          : null,
+      endTime: parseDate(map['endTime']),
       isActive: (map['isActive'] as int) == 1,
       finalQrToken: map['finalQrToken'] as String?,
       courseName: map['courseName'] as String?,
-      formUrl: map['formUrl'] as String?,
+      finalQrExpiresAt: parseDate(map['finalQrExpiresAt']),
+      reportGeneratedAt: parseDate(map['reportGeneratedAt']),
+      reportPdf: _asBytes(map['reportPdf']),
     );
   }
 
@@ -46,14 +59,37 @@ class Session {
       'endTime': endTime?.toIso8601String(),
       'isActive': isActive ? 1 : 0,
       'finalQrToken': finalQrToken,
-      'formUrl': formUrl,
+      'finalQrExpiresAt': finalQrExpiresAt?.toIso8601String(),
+      'reportGeneratedAt': reportGeneratedAt?.toIso8601String(),
+      'reportPdf': reportPdf,
     }..removeWhere((key, value) => value == null);
   }
 
   bool get isFinalized => !isActive && endTime != null;
 
   Duration get remainingDuration {
-    final end = endTime ?? startTime.add(Duration(minutes: durationMinutes));
-    return end.difference(DateTime.now());
+    final plannedEnd = endTime ??
+        startTime.add(Duration(minutes: durationMinutes));
+    return plannedEnd.difference(DateTime.now());
+  }
+
+  bool get finalQrActive {
+    if (isActive) return false;
+    if (finalQrExpiresAt == null) return false;
+    return DateTime.now().isBefore(finalQrExpiresAt!);
+  }
+
+  bool get finalQrExpired {
+    if (finalQrExpiresAt == null) return false;
+    return DateTime.now().isAfter(finalQrExpiresAt!);
+  }
+
+  bool get reportReady => reportPdf != null;
+
+  static Uint8List? _asBytes(Object? value) {
+    if (value == null) return null;
+    if (value is Uint8List) return value;
+    if (value is List<int>) return Uint8List.fromList(value);
+    return null;
   }
 }

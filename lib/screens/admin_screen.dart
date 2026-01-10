@@ -2,7 +2,7 @@ import 'package:class_attendance_system/database/database_helper.dart';
 import 'package:class_attendance_system/models/attendance_record.dart';
 import 'package:class_attendance_system/models/course.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:printing/printing.dart';
 
 class AdminScreen extends StatefulWidget {
   final String adminName;
@@ -152,6 +152,7 @@ class _AdminScreenState extends State<AdminScreen> {
                     );
                   }
 
+                  final shownReportSessions = <int>{};
                   return ListView.builder(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -161,7 +162,10 @@ class _AdminScreenState extends State<AdminScreen> {
                     itemBuilder: (_, index) {
                       final record = records[index];
                       final isFinalized = record.finalConfirmationTime != null;
-                      final hasFormLink = (record.formUrl ?? '').isNotEmpty;
+                      final canShowReportButton =
+                          record.reportAvailable &&
+                              record.sessionId != null &&
+                              shownReportSessions.add(record.sessionId!);
                       return Card(
                         margin: const EdgeInsets.only(bottom: 12),
                         child: ListTile(
@@ -170,12 +174,12 @@ class _AdminScreenState extends State<AdminScreen> {
                           trailing: Wrap(
                             spacing: 8,
                             children: [
-                              if (hasFormLink)
+                              if (canShowReportButton)
                                 IconButton(
-                                  tooltip: 'Open attendance form',
-                                  icon: const Icon(Icons.open_in_new),
+                                  tooltip: 'Open attendance PDF',
+                                  icon: const Icon(Icons.picture_as_pdf),
                                   onPressed: () =>
-                                      _openFormUrl(record.formUrl!),
+                                      _openReport(record.sessionId!),
                                 ),
                               if (isFinalized)
                                 const Chip(label: Text('Finalized'))
@@ -227,16 +231,17 @@ class _AdminScreenState extends State<AdminScreen> {
     return buffer.toString();
   }
 
-  Future<void> _openFormUrl(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) {
-      debugPrint('🛡️ [AdminScreen] Invalid form url: $url');
+  Future<void> _openReport(int sessionId) async {
+    final pdfBytes = await _db.getSessionReport(sessionId);
+    if (pdfBytes == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Report not available yet.')),
+        );
+      }
       return;
     }
-    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched) {
-      debugPrint('🛡️ [AdminScreen] Unable to open $url');
-    }
+    await Printing.layoutPdf(onLayout: (_) async => pdfBytes);
   }
 
   String _formatTime(DateTime time) {

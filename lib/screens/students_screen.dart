@@ -646,6 +646,16 @@ class _StudentScanScreenState extends State<StudentScanScreen> {
       return;
     }
 
+    final expiresAt = session.finalQrExpiresAt;
+    if (expiresAt == null || DateTime.now().isAfter(expiresAt)) {
+      await _showDialog(
+        title: 'QR Closed',
+        message:
+            'The final QR grace period has ended. Please speak with your lecturer.',
+      );
+      return;
+    }
+
     final record = await DatabaseHelper.instance.getActiveAttendanceRecord(
       courseId: payload.courseId,
       studentName: widget.studentName,

@@ -1,11 +1,13 @@
+import 'dart:async';
+
 import 'package:class_attendance_system/database/database_helper.dart';
 import 'package:class_attendance_system/models/course.dart';
 import 'package:class_attendance_system/models/roster_entry.dart';
 import 'package:class_attendance_system/models/session.dart';
-import 'package:class_attendance_system/services/google_form_service.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:class_attendance_system/services/attendance_report_service.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:printing/printing.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 class TeacherScreen extends StatefulWidget {
@@ -365,11 +367,18 @@ class _SessionControlState extends State<_SessionControl> {
   bool _loading = true;
   bool _busy = false;
   int _durationMinutes = 90;
+  Timer? _finalQrWatcher;
 
   @override
   void initState() {
     super.initState();
     _loadSession();
+  }
+
+  @override
+  void dispose() {
+    _finalQrWatcher?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadSession() async {
@@ -378,9 +387,23 @@ class _SessionControlState extends State<_SessionControl> {
       widget.course.id!,
     );
     if (!mounted) return;
+    _scheduleFinalQrWatcher(latest);
     setState(() {
       _session = latest;
       _loading = false;
+    });
+  }
+
+  void _scheduleFinalQrWatcher(Session? session) {
+    _finalQrWatcher?.cancel();
+    final expiresAt = session?.finalQrExpiresAt;
+    if (expiresAt == null) return;
+    final delay = expiresAt.difference(DateTime.now());
+    if (delay.isNegative) return;
+    _finalQrWatcher = Timer(delay + const Duration(seconds: 1), () {
+      if (mounted) {
+        _loadSession();
+      }
     });
   }
 
@@ -394,6 +417,7 @@ class _SessionControlState extends State<_SessionControl> {
       );
       final fresh = await DatabaseHelper.instance.getSessionById(sessionId);
       if (!mounted) return;
+      _scheduleFinalQrWatcher(fresh);
       setState(() => _session = fresh);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -422,29 +446,16 @@ class _SessionControlState extends State<_SessionControl> {
     setState(() => _busy = true);
     try {
       await DatabaseHelper.instance.endSession(sessionId);
-      final sessionAfterEnd = await DatabaseHelper.instance.getSessionById(sessionId);
-      final sessionForExport = sessionAfterEnd ?? _session;
-      String? formUrl;
-      if (sessionForExport != null) {
-        formUrl = await _exportAttendanceSummary(sessionForExport);
-        if (formUrl != null) {
-          await DatabaseHelper.instance.updateSessionFormUrl(
-            sessionForExport.id!,
-            formUrl,
-          );
-        }
-      }
       final refreshed = await DatabaseHelper.instance.getSessionById(sessionId);
       if (!mounted) return;
+      _scheduleFinalQrWatcher(refreshed);
       setState(() => _session = refreshed);
+      final expiresAt = refreshed?.finalQrExpiresAt;
+      final message = expiresAt != null
+          ? 'Session ended. Final QR active until ${_formatTime(expiresAt)}.'
+          : 'Session ended. Final QR unlocked for ${widget.course.courseName}.';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            formUrl != null
-                ? 'Session ended and attendance form generated for ${widget.course.courseName}.'
-                : 'Session ended. Final QR unlocked for ${widget.course.courseName}.',
-          ),
-        ),
+        SnackBar(content: Text(message)),
       );
     } catch (error) {
       debugPrint('🧑‍🏫 [TeacherSession] End failed: $error');
@@ -460,44 +471,58 @@ class _SessionControlState extends State<_SessionControl> {
     }
   }
 
-  Future<String?> _exportAttendanceSummary(Session session) async {
+  Future<void> _generateReport() async {
     final courseId = widget.course.id;
-    final currentSessionId = session.id;
-    if (courseId == null || currentSessionId == null) {
-      debugPrint('🧑‍🏫 [TeacherSession] Skipping export, missing IDs.');
-      return null;
-    }
-
+    final session = _session;
+    if (courseId == null || session?.id == null) return;
+    final activeSession = session!;
+    setState(() => _busy = true);
     try {
       final statuses = await DatabaseHelper.instance.getStudentStatusesForSession(
         courseId: courseId,
-        sessionId: currentSessionId,
+        sessionId: activeSession.id!,
       );
-      if (statuses.isEmpty) {
-        debugPrint('🧑‍🏫 [TeacherSession] No roster data to export for course=$courseId.');
-        return null;
-      }
-      return await GoogleFormService.instance.createCourseAttendanceForm(
+      final pdfBytes = await AttendanceReportService.instance.buildSessionReport(
         course: widget.course,
-        session: session,
+        session: activeSession,
         statuses: statuses,
       );
+      await DatabaseHelper.instance.saveSessionReport(activeSession.id!, pdfBytes);
+      final refreshed = await DatabaseHelper.instance.getSessionById(activeSession.id!);
+      if (!mounted) return;
+      setState(() => _session = refreshed);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Attendance PDF generated.')),
+      );
     } catch (error) {
-      debugPrint('🧑‍🏫 [TeacherSession] Google Form export failed: $error');
-      return null;
+      debugPrint('🧑‍🏫 [TeacherSession] Report generation failed: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to generate PDF: $error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
     }
   }
 
-  Future<void> _openFormUrl(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) {
-      debugPrint('🧑‍🏫 [TeacherSession] Invalid form url: $url');
+  Future<void> _openReport() async {
+    final sessionId = _session?.id;
+    if (sessionId == null) return;
+    final cached = _session?.reportPdf;
+    final pdfBytes = cached ??
+        await DatabaseHelper.instance.getSessionReport(sessionId);
+    if (pdfBytes == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No PDF available yet.')),
+        );
+      }
       return;
     }
-    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched) {
-      debugPrint('🧑‍🏫 [TeacherSession] Unable to open $url');
-    }
+    await Printing.layoutPdf(onLayout: (_) async => pdfBytes);
   }
 
   @override
@@ -509,7 +534,16 @@ class _SessionControlState extends State<_SessionControl> {
 
     final isActive = _session?.isActive == true;
     final hasHistory = _session != null && _session!.id != null;
-    final hasFormLink = (_session?.formUrl ?? '').isNotEmpty;
+    final showFinalQr = _session?.finalQrActive == true;
+    final finalQrExpiresLabel = _session?.finalQrExpiresAt != null
+      ? _formatTime(_session!.finalQrExpiresAt!)
+      : null;
+    final hasReport = _session?.reportReady == true;
+    final reportGeneratedLabel = _session?.reportGeneratedAt != null
+      ? _formatTime(_session!.reportGeneratedAt!)
+      : null;
+    final canGenerateReport =
+      hasHistory && !isActive && !showFinalQr && !hasReport;
     final startLabel = _session?.startTime != null
         ? _formatTime(_session!.startTime)
         : null;
@@ -609,22 +643,43 @@ class _SessionControlState extends State<_SessionControl> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 12),
-                Text(
-                  'Final QR — students must scan before leaving:',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 12),
-                Center(
-                  child: QrImageView(
-                    data: widget.course.buildQrPayload(
-                      sessionId: _session!.id,
-                      phase: 'end',
-                    ),
-                    version: QrVersions.auto,
-                    size: 200,
+                if (showFinalQr) ...[
+                  Text(
+                    'Final QR — students must scan before leaving:',
+                    style: Theme.of(context).textTheme.bodyMedium,
                   ),
-                ),
-                const SizedBox(height: 4),
+                  const SizedBox(height: 12),
+                  Center(
+                    child: QrImageView(
+                      data: widget.course.buildQrPayload(
+                        sessionId: _session!.id,
+                        phase: 'end',
+                      ),
+                      version: QrVersions.auto,
+                      size: 200,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  if (finalQrExpiresLabel != null)
+                    Text(
+                      'QR valid until $finalQrExpiresLabel',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                ] else ...[
+                  Text(
+                    'Final QR window is closed.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  if (finalQrExpiresLabel != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Expired at $finalQrExpiresLabel',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 8),
                 Text(
                   'Ended at ${_formatTime(_session!.endTime!)}',
                   style: Theme.of(context).textTheme.bodySmall,
@@ -634,13 +689,29 @@ class _SessionControlState extends State<_SessionControl> {
                   icon: const Icon(Icons.restart_alt),
                   label: const Text('Start new session'),
                 ),
-                if (hasFormLink) ...[
+                if (canGenerateReport) ...[
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
-                    onPressed: () => _openFormUrl(_session!.formUrl!),
-                    icon: const Icon(Icons.open_in_new),
-                    label: const Text('Open Attendance Form'),
+                    onPressed: _busy ? null : _generateReport,
+                    icon: const Icon(Icons.picture_as_pdf_outlined),
+                    label: const Text('Generate attendance PDF'),
                   ),
+                ],
+                if (hasReport) ...[
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    onPressed: _openReport,
+                    icon: const Icon(Icons.picture_as_pdf),
+                    label: const Text('Open attendance PDF'),
+                  ),
+                  if (reportGeneratedLabel != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Generated $reportGeneratedLabel',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
                 ],
               ],
             ),
