@@ -5,6 +5,7 @@ import 'package:class_attendance_system/models/attendance_record.dart';
 import 'package:class_attendance_system/models/course.dart';
 import 'package:class_attendance_system/models/session.dart';
 import 'package:class_attendance_system/services/geofencing.dart';
+import 'package:class_attendance_system/theme/app_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -218,21 +219,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
       future: _courseRosterFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Card(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(child: CircularProgressIndicator()),
-            ),
+          return Container(
+            decoration: AppDecorations.glassCard(),
+            padding: const EdgeInsets.all(24),
+            child: const Center(child: CircularProgressIndicator()),
           );
         }
 
         if (snapshot.hasError) {
           debugPrint('🎓 [StudentDashboard] Course load error ${snapshot.error}');
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text('Unable to load courses: ${snapshot.error}'),
-            ),
+          return Container(
+            decoration: AppDecorations.glassCard(),
+            padding: const EdgeInsets.all(20),
+            child: Text('Unable to load courses: ${snapshot.error}'),
           );
         }
 
@@ -240,50 +239,55 @@ class _StudentDashboardState extends State<StudentDashboard> {
           const _CourseRosterBundle(courses: [], registeredCourseIds: <int>{});
         final registeredCount = bundle.registeredCourseIds.length;
 
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Course enrollment',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Registered $registeredCount / $_maxRegistrations courses',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Tap a course to enroll yourself. You can drop a course anytime before the session starts.',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Colors.grey.shade600),
-                ),
-                const SizedBox(height: 12),
-                if (bundle.courses.isEmpty)
-                  const Text('No published courses yet.')
-                else
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: bundle.courses.length,
-                    itemBuilder: (_, index) {
-                      final course = bundle.courses[index];
-                      final isRegistered =
-                          course.id != null &&
-                              bundle.registeredCourseIds.contains(course.id);
-                      final actionLabel =
-                          isRegistered ? 'Registered' : 'Enroll';
-                      final actionColor =
-                          isRegistered ? Colors.green : Colors.blue;
-                      return ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 4,
-                        ),
+        return Container(
+          decoration: AppDecorations.glassCard(),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Course enrollment',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Registered $registeredCount / $_maxRegistrations courses',
+                style: Theme.of(context)
+                    .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.black.withValues(alpha: .6)),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Tap a course to enroll yourself. You can drop a course anytime before the session starts.',
+                style: Theme.of(context)
+                    .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.black.withValues(alpha: .65)),
+              ),
+              const SizedBox(height: 16),
+              if (bundle.courses.isEmpty)
+                const Text('No published courses yet.')
+              else
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: bundle.courses.length,
+                  itemBuilder: (_, index) {
+                    final course = bundle.courses[index];
+                    final isRegistered =
+                        course.id != null &&
+                            bundle.registeredCourseIds.contains(course.id);
+                    final actionLabel = isRegistered ? 'Registered' : 'Enroll';
+                    final actionColor =
+                        isRegistered ? Colors.green : Colors.blueAccent;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: AppDecorations.frostedPanel(opacity: .9),
+                      child: ListTile(
                         title: Text(course.courseName),
                         subtitle: Text(
                           'Lat ${course.latitude.toStringAsFixed(4)} | Long ${course.longitude.toStringAsFixed(4)}',
@@ -302,11 +306,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           course,
                           !isRegistered,
                         ),
-                      );
-                    },
-                  ),
-              ],
-            ),
+                      ),
+                    );
+                  },
+                ),
+            ],
           ),
         );
       },
@@ -318,41 +322,63 @@ class _StudentDashboardState extends State<StudentDashboard> {
       future: _historyFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return Container(
+            decoration: AppDecorations.glassCard(),
+            padding: const EdgeInsets.all(24),
+            child: const Center(child: CircularProgressIndicator()),
+          );
         }
 
         if (snapshot.hasError) {
           debugPrint('🎓 [StudentDashboard] History error ${snapshot.error}');
-          return Padding(
-            padding: const EdgeInsets.only(top: 32),
+          return Container(
+            decoration: AppDecorations.glassCard(),
+            padding: const EdgeInsets.all(20),
             child: Text('Unable to load attendance: ${snapshot.error}'),
           );
         }
 
         final records = snapshot.data ?? [];
-        if (records.isEmpty) {
-          return Column(
+        return Container(
+          decoration: AppDecorations.glassCard(),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 80),
-              Icon(
-                Icons.history_rounded,
-                size: 56,
-                color: Colors.grey.shade500,
+              Text(
+                'Attendance timeline',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: 16),
-              const Text(
-                'No attendance logs yet. Tap the scanner icon to get started.',
-                textAlign: TextAlign.center,
-              ),
+              const SizedBox(height: 12),
+              if (records.isEmpty)
+                Column(
+                  children: [
+                    Icon(
+                      Icons.history_rounded,
+                      size: 56,
+                      color: Colors.grey.shade500,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'No attendance logs yet. Tap the scanner icon to get started.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                )
+              else
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: records.length,
+                  itemBuilder: (_, index) => _AttendanceCard(
+                    record: records[index],
+                  ),
+                ),
             ],
-          );
-        }
-
-        return ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: records.length,
-          itemBuilder: (_, index) => _AttendanceCard(record: records[index]),
+          ),
         );
       },
     );
@@ -404,29 +430,72 @@ class _StudentDashboardState extends State<StudentDashboard> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: Text('Welcome, ${widget.studentName}'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        title: Text('Welcome, ${widget.studentName}',style: const TextStyle(color: Colors.white),),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
         actions: [
           IconButton(
-            icon: const Icon(Icons.qr_code_scanner),
+            icon: const Icon(Icons.qr_code_scanner,color: Colors.white,),
             tooltip: 'Scan QR',
             onPressed: _openScanner,
           ),
         ],
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(gradient: AppGradients.royalTwilight),
+        ),
       ),
-      body: RefreshIndicator(
-        onRefresh: _handleFullRefresh,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _buildCourseEnrollmentSection(),
-            const SizedBox(height: 24),
-            _buildAttendanceSection(),
-          ],
+      body: Container(
+        decoration: const BoxDecoration(gradient: AppGradients.royalTwilight),
+        child: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: _handleFullRefresh,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                Container(
+                  decoration: AppDecorations.glassCard(opacity: .85),
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Good to see you, ${widget.studentName}! 👋',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Enroll into courses, stay inside the geofence, and lock in both QR scans to complete attendance.',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(color: Colors.black.withValues(alpha: .65)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _buildCourseEnrollmentSection(),
+                const SizedBox(height: 24),
+                _buildAttendanceSection(),
+              ],
+            ),
+          ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openScanner,
+        backgroundColor: const Color.fromARGB(255, 226, 211, 250),
         icon: const Icon(Icons.qr_code_2_outlined),
         label: const Text('Scan Now'),
       ),
@@ -467,10 +536,14 @@ class _AttendanceCard extends StatelessWidget {
       subtitle.write(' • Outside ${record.minutesOutside} min');
     }
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
+      decoration: AppDecorations.frostedPanel(opacity: .92),
       child: ListTile(
-        title: Text(record.courseName ?? 'Course ${record.courseId}'),
+        title: Text(
+          record.courseName ?? 'Course ${record.courseId}',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         subtitle: Text(subtitle.toString()),
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -479,7 +552,13 @@ class _AttendanceCard extends StatelessWidget {
               record.isValid ? Icons.verified : Icons.info,
               color: statusColor,
             ),
-            Text(statusText, style: TextStyle(color: statusColor)),
+            Text(
+              statusText,
+              style: TextStyle(
+                color: statusColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),
@@ -696,45 +775,107 @@ class _StudentScanScreenState extends State<StudentScanScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Scan QR')),
-      body: Stack(
-        children: [
-          MobileScanner(
-            onDetect: (capture) {
-              if (_isProcessing) return;
-              for (final barcode in capture.barcodes) {
-                final payload = barcode.rawValue;
-                if (payload != null) {
-                  debugPrint(
-                    '📷 [StudentScan] Barcode detected, forwarding to handler',
-                  );
-                  _handleScan(payload);
-                  break;
-                }
-              }
-            },
-          ),
-          if (_isProcessing)
-            const Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(12),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(strokeWidth: 2),
-                        SizedBox(width: 12),
-                        Text('Validating geofence...'),
-                      ],
+      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        title: const Text('Scan QR', style: TextStyle(color: Colors.white)),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(gradient: AppGradients.emberGlow),
+        ),
+      ),
+      body: Container(
+        decoration: const BoxDecoration(gradient: AppGradients.emberGlow),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 80, 20, 40),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(36),
+                    child: MobileScanner(
+                      onDetect: (capture) {
+                        if (_isProcessing) return;
+                        for (final barcode in capture.barcodes) {
+                          final payload = barcode.rawValue;
+                          if (payload != null) {
+                            debugPrint(
+                              '📷 [StudentScan] Barcode detected, forwarding to handler',
+                            );
+                            _handleScan(payload);
+                            break;
+                          }
+                        }
+                      },
                     ),
                   ),
                 ),
               ),
-            ),
-        ],
+              IgnorePointer(
+                ignoring: true,
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Container(
+                      decoration: AppDecorations.glassCard(opacity: .85),
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Hold steady inside the frame',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Stay inside the classroom geofence while scanning both start and final QR codes.',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                              ?.copyWith(color: Colors.black.withValues(alpha: .65)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              if (_isProcessing)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Container(
+                      decoration: AppDecorations.frostedPanel(opacity: .95),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          CircularProgressIndicator(strokeWidth: 2),
+                          SizedBox(width: 12),
+                          Text('Validating geofence...'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

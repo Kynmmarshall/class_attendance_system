@@ -5,6 +5,7 @@ import 'package:class_attendance_system/models/course.dart';
 import 'package:class_attendance_system/models/roster_entry.dart';
 import 'package:class_attendance_system/models/session.dart';
 import 'package:class_attendance_system/services/attendance_report_service.dart';
+import 'package:class_attendance_system/theme/app_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:printing/printing.dart';
@@ -179,165 +180,241 @@ class _TeacherScreenState extends State<TeacherScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final heroGradient = const BoxDecoration(
+      gradient: AppGradients.royalTwilight,
+    );
     return Scaffold(
-      appBar: AppBar(title: Text('Hello, ${widget.teacherName}')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Create Course & QR',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 12),
-            Form(
-              key: _formKey,
-              child: Column(
-                children: [
-                  TextFormField(
-                    controller: _courseController,
-                    decoration: const InputDecoration(
-                      labelText: 'Course title (e.g., ICT 101)',
-                    ),
-                    validator: (value) =>
-                        value == null || value.trim().isEmpty ? 'Enter a title' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
+      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        title: Text('Lecturer • ${widget.teacherName}',style: TextStyle(color: Colors.white),),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: false,
+        flexibleSpace: Container(decoration: heroGradient),
+      ),
+      body: Container(
+        decoration: heroGradient,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 60),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: AppDecorations.glassCard(opacity: .82),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _latController,
-                          readOnly: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Latitude (auto)',
-                          ),
-                          validator: _validateDouble,
-                        ),
+                      Text(
+                        'Design your geofenced session',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w700),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _longController,
-                          readOnly: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Longitude (auto)',
-                          ),
-                          validator: _validateDouble,
-                        ),
-                      ),
-                      IconButton(
-                        icon: _isLocating
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.my_location),
-                        tooltip: 'Use current location',
-                        onPressed: _isLocating ? null : _captureLocation,
+                      const SizedBox(height: 6),
+                      Text(
+                        'Publish a course perimeter, stream live QR codes, then finalize attendance with one tap.',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(color: Colors.white.withValues(alpha: .85)),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _radiusController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Radius (meters)',
-                    ),
-                    validator: _validateDouble,
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _saveCourse,
-                      icon: const Icon(Icons.save_outlined),
-                      label: const Text('Save Course'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Published Courses',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 12),
-            FutureBuilder<List<Course>>(
-              future: _coursesFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                if (snapshot.hasError) {
-                  debugPrint(
-                    '🧑‍🏫 [TeacherScreen] Error loading courses ${snapshot.error}',
-                  );
-                  return Text('Unable to load courses: ${snapshot.error}');
-                }
-
-                final courses = snapshot.data ?? [];
-                if (courses.isEmpty) {
-                  return const Text(
-                    'No courses yet. Add one above to generate a QR.',
-                  );
-                }
-
-                return ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: courses.length,
-                  itemBuilder: (_, index) {
-                    final course = courses[index];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  decoration: AppDecorations.glassCard(),
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Create Course & QR',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 12),
+                      Form(
+                        key: _formKey,
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(course.courseName),
-                              subtitle: Text(
-                                'Lat ${course.latitude.toStringAsFixed(5)}, '
-                                'Long ${course.longitude.toStringAsFixed(5)}, '
-                                '${course.radius.toStringAsFixed(1)}m radius',
+                            TextFormField(
+                              controller: _courseController,
+                              decoration: const InputDecoration(
+                                labelText: 'Course title (e.g., ICT 101)',
                               ),
-                              trailing: Wrap(
-                                spacing: 8,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.qr_code),
-                                    tooltip: 'Show geofence QR',
-                                    onPressed: () => _showQr(course),
+                              validator: (value) =>
+                                  value == null || value.trim().isEmpty
+                                      ? 'Enter a title'
+                                      : null,
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _latController,
+                                    readOnly: true,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Latitude (auto)',
+                                    ),
+                                    validator: _validateDouble,
                                   ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline),
-                                    tooltip: 'Delete course',
-                                    onPressed: () => _deleteCourse(course),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _longController,
+                                    readOnly: true,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Longitude (auto)',
+                                    ),
+                                    validator: _validateDouble,
                                   ),
-                                ],
+                                ),
+                                IconButton(
+                                  icon: _isLocating
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child:
+                                              CircularProgressIndicator(strokeWidth: 2),
+                                        )
+                                      : const Icon(Icons.my_location),
+                                  tooltip: 'Use current location',
+                                  onPressed: _isLocating ? null : _captureLocation,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _radiusController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'Radius (meters)',
+                              ),
+                              validator: _validateDouble,
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: _saveCourse,
+                                icon: const Icon(Icons.save_outlined),
+                                label: const Text('Save Course'),
                               ),
                             ),
-                            const Divider(),
-                            _SessionControl(course: course),
-                            const SizedBox(height: 16),
-                            _RosterViewer(course: course),
                           ],
                         ),
                       ),
-                    );
-                  },
-                );
-              },
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  decoration: AppDecorations.glassCard(),
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Published Courses',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 12),
+                      FutureBuilder<List<Course>>(
+                        future: _coursesFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
+
+                          if (snapshot.hasError) {
+                            debugPrint(
+                              '🧑‍🏫 [TeacherScreen] Error loading courses ${snapshot.error}',
+                            );
+                            return Text('Unable to load courses: ${snapshot.error}');
+                          }
+
+                          final courses = snapshot.data ?? [];
+                          if (courses.isEmpty) {
+                            return const Text(
+                              'No courses yet. Add one above to generate a QR.',
+                            );
+                          }
+
+                          return ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: courses.length,
+                            itemBuilder: (_, index) {
+                              final course = courses[index];
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                decoration: AppDecorations.frostedPanel(opacity: .95),
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    ListTile(
+                                      contentPadding: EdgeInsets.zero,
+                                      title: Text(course.courseName,
+                                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                                      subtitle: Text(
+                                        'Lat ${course.latitude.toStringAsFixed(5)}, '
+                                        'Long ${course.longitude.toStringAsFixed(5)}, '
+                                        '${course.radius.toStringAsFixed(1)}m radius',
+                                      ),
+                                      trailing: Wrap(
+                                        spacing: 8,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.qr_code),
+                                            tooltip: 'Show geofence QR',
+                                            onPressed: () => _showQr(course),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete_outline),
+                                            tooltip: 'Delete course',
+                                            onPressed: () => _deleteCourse(course),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const Divider(),
+                                    _SessionControl(course: course),
+                                    const SizedBox(height: 16),
+                                    _RosterViewer(course: course),
+                                  ],
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

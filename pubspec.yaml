@@ -16,6 +16,8 @@ dependencies:
   mobile_scanner: ^5.2.3 # To scan QR [cite: 27]
   pdf: ^3.10.8
   printing: ^5.12.0
+  shared_preferences: ^2.3.2
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:
